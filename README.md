@@ -2,6 +2,8 @@
 
 Pi 扩展：使用 `/subtask` 创建非阻塞子会话，并把最终结果插回当前会话。
 
+[English README](README.en.md)
+
 ## 演示
 
 ![pi-subtask 手动输入演示](assets/pi-subtask-hello-world-demo-manual.gif)
@@ -32,6 +34,20 @@ pi -e npm:pi-subtask
 
 不带参数时列出当前运行中的子任务。
 
+## 语言
+
+设置 `PI_SUBTASK_LOCALE` 为 `zh-CN` 或 `en-US`。扩展优先读取进程环境变量，然后读取当前工作目录中的 `.env`。
+
+```bash
+cp .env.example .env
+# 中文
+PI_SUBTASK_LOCALE=zh-CN pi
+# English
+PI_SUBTASK_LOCALE=en-US pi
+```
+
+支持别名：`zh`、`zh-CN`、`en`、`en-US`。默认语言：`zh-CN`。
+
 ## 行为
 
 - 每个子任务拥有独立 Pi session 文件和 session ID；
@@ -40,7 +56,8 @@ pi -e npm:pi-subtask
 - 子任务完成前保持状态栏记录；
 - 子 Pi 不允许嵌套调用 `/subtask`；
 - 需要等待时，子 Pi 被要求使用前台同步 `bash` 命令完成等待；
-- 扩展和子 Pi 继承当前工作目录、模型、思考级别和活动工具。
+- 扩展和子 Pi 继承当前工作目录、模型、思考级别和活动工具；
+- 子 Pi 运行时禁用其他扩展，保持干净运行环境。
 
 ## 安全
 
