@@ -11,6 +11,7 @@ test("package exposes a Pi extension manifest", async () => {
 		await readFile(join(root, "package.json"), "utf8"),
 	);
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions"]);
+	assert.match(packageJson.pi.image, /pi-subtask-hello-world-demo-manual\.gif$/);
 	assert.ok(packageJson.keywords.includes("pi-package"));
 	assert.equal(
 		packageJson.peerDependencies["@earendil-works/pi-coding-agent"],
@@ -19,6 +20,9 @@ test("package exposes a Pi extension manifest", async () => {
 });
 
 test("extension entry point is present", async () => {
+	const asset = join(root, "assets", "pi-subtask-hello-world-demo-manual.gif");
+	assert.ok((await readFile(asset)).byteLength > 100_000);
+
 	const entry = join(root, "extensions", "index.ts");
 	const source = await readFile(entry, "utf8");
 	assert.match(source, /registerCommand\("subtask"/);

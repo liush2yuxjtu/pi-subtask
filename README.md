@@ -2,6 +2,10 @@
 
 Pi 扩展：使用 `/subtask` 创建非阻塞子会话，并把最终结果插回当前会话。
 
+## 演示
+
+![pi-subtask 手动输入演示](assets/pi-subtask-hello-world-demo-manual.gif)
+
 ## 安装
 
 ```bash
