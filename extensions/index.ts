@@ -44,7 +44,8 @@ function assistantText(message: JsonEvent["message"]): string {
 	if (message?.role !== "assistant" || !message.content) return "";
 	return message.content
 		.reduce<string[]>((texts, part) => {
-			if (part.type === "text" && typeof part.text === "string") texts.push(part.text);
+			if (part.type === "text" && typeof part.text === "string")
+				texts.push(part.text);
 			return texts;
 		}, [])
 		.join("");
@@ -221,7 +222,14 @@ export default function subtaskExtension(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const childArgs = ["--mode", "json", "-p", "--session", childSessionFile];
+			const childArgs = [
+				"--no-extensions",
+				"--mode",
+				"json",
+				"-p",
+				"--session",
+				childSessionFile,
+			];
 			if (ctx.model)
 				childArgs.push("--model", `${ctx.model.provider}/${ctx.model.id}`);
 			const activeTools = pi.getActiveTools();
@@ -284,7 +292,6 @@ export default function subtaskExtension(pi: ExtensionAPI): void {
 						? "completed"
 						: `failed (exit ${exitCode ?? "unknown"})`);
 				enqueueResult(ctx, { status, result, childSessionFile, exitCode });
-
 			};
 			const handleLine = (line: string) => {
 				parseLine(line, state);
