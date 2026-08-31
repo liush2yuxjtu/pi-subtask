@@ -1,6 +1,6 @@
 {
   "name": "pi-subtask",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Non-blocking /subtask session for Pi with parallel children and live status tracking.",
   "keywords": [
     "pi-package",
