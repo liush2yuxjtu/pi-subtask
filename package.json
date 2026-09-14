@@ -34,7 +34,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/usage-entry.ts"
     ],
     "image": "https://raw.githubusercontent.com/liush2yuxjtu/pi-subtask/main/assets/pi-subtask-hello-world-demo-manual.gif"
   },
