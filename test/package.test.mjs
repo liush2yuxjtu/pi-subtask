@@ -16,7 +16,7 @@ test("package exposes a Pi extension manifest", async () => {
 			`Invalid package.json: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
-	assert.deepEqual(packageJson.pi.extensions, ["./extensions"]);
+	assert.deepEqual(packageJson.pi.extensions, ["./extensions/usage-entry.ts"]);
 	assert.ok(packageJson.files.includes(".env.example"));
 	assert.ok(packageJson.files.includes("README.en.md"));
 	assert.match(
@@ -45,4 +45,8 @@ test("extension entry point is present", async () => {
 	assert.match(source, /finish\(exitCode\)/);
 	assert.match(source, /id\.slice\(-8\)/);
 	assert.equal(basename(entry), "index.ts");
+
+	const usageEntry = await readFile(join(root, "extensions", "usage-entry.ts"), "utf8");
+	assert.match(usageEntry, /exitCode === 0/);
+	assert.match(usageEntry, /PI_SUBTASK_CHILD/);
 });
