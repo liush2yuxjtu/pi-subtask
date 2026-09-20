@@ -24,6 +24,9 @@ test("package exposes a Pi extension manifest", async () => {
 		/pi-subtask-hello-world-demo-manual\.gif$/,
 	);
 	assert.ok(packageJson.keywords.includes("pi-package"));
+	assert.match(packageJson.description, /Manual context-offload/);
+	assert.ok(packageJson.keywords.includes("context offload"));
+	assert.ok(packageJson.keywords.includes("manual delegation"));
 	assert.equal(
 		packageJson.peerDependencies["@earendil-works/pi-coding-agent"],
 		"*",
@@ -39,6 +42,8 @@ test("extension entry point is present", async () => {
 	const entry = join(root, "extensions", "index.ts");
 	const source = await readFile(entry, "utf8");
 	assert.match(source, /registerCommand\("subtask"/);
+	assert.doesNotMatch(source, /registerTool\(/, "manual context offload must not add a parent LLM tool");
+	assert.doesNotMatch(source, /before_agent_start/, "manual context offload must not inject the parent system prompt");
 	assert.match(source, /COPIES/);
 	assert.match(source, /PI_SUBTASK_LOCALE/);
 	assert.match(source, /--append-system-prompt/);

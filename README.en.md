@@ -8,6 +8,23 @@ A lightweight Pi subagent extension that runs non-blocking `/subtask` child sess
 
 ![Manual pi-subtask demo](assets/pi-subtask-hello-world-demo-manual.gif)
 
+## Why manual context offload?
+
+`pi-subtask` deliberately does less than full subagent orchestrators.
+
+| Surface | pi-subtask | full subagent orchestrators |
+| --- | --- | --- |
+| Parent LLM tool schema | **0** | typically expose a `subagent` tool |
+| Parent prompt injection | **0** `before_agent_start` hooks | may inject delegation guidance / agent discovery |
+| Activation | explicit `/subtask <task>` | model- or user-triggered delegation |
+| Child prompt | 5 short lines (~375 chars in English) | role/workflow-specific prompts |
+| Personas / workflow engine | none | often included |
+| Goal | manual context isolation with low parent overhead | richer autonomous orchestration |
+
+The trade-off is intentional: you choose exactly what leaves the parent context. This is useful for noisy repo exploration, search, review, or other independent work where you want the child transcript isolated but do not want a permanent delegation tool in every parent turn.
+
+Multiple `/subtask` commands can still run concurrently, and each completed child result is returned to the parent session.
+
 ## Install
 
 ```bash
