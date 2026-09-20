@@ -1,7 +1,7 @@
 {
   "name": "pi-subtask",
   "version": "0.1.6",
-  "description": "Lightweight non-blocking subagent extension for Pi: run parallel child sessions while the parent stays responsive, with live status and automatic results.",
+  "description": "Manual context-offload for Pi: lightweight non-blocking /subtask child sessions with parallel execution and zero parent LLM tool overhead.",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -12,9 +12,11 @@
     "parallel agents",
     "background agents",
     "agent delegation",
-    "multi-agent",
-    "agent orchestration",
-    "child sessions"
+    "child sessions",
+    "context offload",
+    "context isolation",
+    "manual delegation",
+    "parallel subtask"
   ],
   "license": "MIT",
   "files": [

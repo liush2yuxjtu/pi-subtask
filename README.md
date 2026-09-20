@@ -62,7 +62,24 @@ The package uses Pi's built-in `@earendil-works/pi-coding-agent` as a peer depen
 
 Pi 扩展：使用 `/subtask` 创建非阻塞子会话，并把最终结果插回当前会话。
 
-### 安装
+### 为什么是手动 Context Offload？
+
+`pi-subtask` 故意不做完整的 Subagent 编排框架。
+
+| Surface | pi-subtask | 完整 Subagent 编排器 |
+| --- | --- | --- |
+| 父 Agent tool schema | **0** | 通常暴露 `subagent` tool |
+| 父 Prompt 注入 | **0** 个 `before_agent_start` hook | 可能注入 delegation / agent discovery |
+| 触发方式 | 显式 `/subtask <任务>` | 模型或用户触发 delegation |
+| Child prompt | 英文版 5 行，约 375 字符 | 通常有角色 / workflow prompt |
+| Persona / Workflow engine | 无 | 经常包含 |
+| 目标 | 低开销、手动 Context Isolation | 更丰富的自动编排 |
+
+这是刻意的取舍：由你决定哪些工作离开主 Context。它特别适合会制造大量噪声的 repo exploration、搜索、review 等独立任务，同时避免给每个父 Agent turn 永久增加 delegation tool。
+
+多个 `/subtask` 仍然可以并行运行，完成后结果会回到父会话。
+
+## 安装
 
 ```bash
 pi install npm:pi-subtask
