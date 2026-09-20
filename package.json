@@ -1,6 +1,6 @@
 {
   "name": "pi-subtask",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Non-blocking /subtask session for Pi with parallel children and live status tracking.",
   "keywords": [
     "pi-package",
@@ -45,5 +45,8 @@
   "bugs": {
     "url": "https://github.com/liush2yuxjtu/pi-subtask/issues"
   },
-  "homepage": "https://pi.dev/packages"
+  "homepage": "https://pi.dev/packages",
+  "dependencies": {
+    "@nyn5255/telemetry": "^0.1.1"
+  }
 }
