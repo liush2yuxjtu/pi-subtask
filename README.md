@@ -1,6 +1,6 @@
 # pi-subtask
 
-A Pi extension that runs non-blocking `/subtask` child sessions and inserts their final results back into the current session.
+A lightweight Pi subagent extension that runs non-blocking `/subtask` child sessions in parallel and inserts their final results back into the current session while the parent stays responsive.
 
 [中文说明](#中文说明)
 
