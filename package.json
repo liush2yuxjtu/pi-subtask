@@ -1,13 +1,20 @@
 {
   "name": "pi-subtask",
   "version": "0.1.6",
-  "description": "Non-blocking /subtask session for Pi with parallel children and live status tracking.",
+  "description": "Lightweight non-blocking subagent extension for Pi: run parallel child sessions while the parent stays responsive, with live status and automatic results.",
   "keywords": [
     "pi-package",
-    "pi",
     "pi-extension",
+    "pi coding agent",
     "subtask",
-    "subagent"
+    "subagent",
+    "subagents",
+    "parallel agents",
+    "background agents",
+    "agent delegation",
+    "multi-agent",
+    "agent orchestration",
+    "child sessions"
   ],
   "license": "MIT",
   "files": [
@@ -45,7 +52,7 @@
   "bugs": {
     "url": "https://github.com/liush2yuxjtu/pi-subtask/issues"
   },
-  "homepage": "https://pi.dev/packages",
+  "homepage": "https://github.com/liush2yuxjtu/pi-subtask#readme",
   "dependencies": {
     "@nyn5255/telemetry": "^0.1.1"
   }
