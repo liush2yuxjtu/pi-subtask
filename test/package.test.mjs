@@ -39,6 +39,9 @@ test("extension entry point is present", async () => {
 	const entry = join(root, "extensions", "index.ts");
 	const source = await readFile(entry, "utf8");
 	assert.match(source, /registerCommand\("subtask"/);
+	assert.match(source, /registerTool\(\{/);
+	assert.match(source, /name: "subtask"/);
+	assert.match(source, /promptGuidelines/);
 	assert.match(source, /COPIES/);
 	assert.match(source, /PI_SUBTASK_LOCALE/);
 	assert.match(source, /--append-system-prompt/);

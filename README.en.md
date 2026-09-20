@@ -1,5 +1,9 @@
 # pi-subtask
 
+## Try this first
+
+After installing, just ask Pi naturally: “Check auth and tests in parallel while I keep working.” Pi can call the subtask tool itself; /subtask remains the explicit manual command. There are no built-in personas or workflow engine.
+
 A lightweight Pi subagent extension that runs non-blocking `/subtask` child sessions in parallel and inserts their final results back into the current session while the parent stays responsive.
 
 [中文 README](README.md)

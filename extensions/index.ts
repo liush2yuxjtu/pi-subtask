@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as path from "node:path";
+import { Type } from "typebox";
 import {
 	SessionManager,
 	type ExtensionAPI,
-	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
@@ -168,7 +168,7 @@ function parseLine(
 }
 
 function notify(
-	ctx: ExtensionCommandContext,
+	ctx: ExtensionContext,
 	message: string,
 	type: "info" | "warning" | "error" = "info",
 ): void {
@@ -183,52 +183,58 @@ export default function subtaskExtension(pi: ExtensionAPI): void {
 	const copy = COPIES[locale];
 	const children = new Set<ChildProcess>();
 	const tasks = new Map<ChildProcess, { id: string; prompt: string }>();
-	let resultDeliveryQueue: Promise<void> = Promise.resolve();
+	type PendingResult = {
+		ctx: ExtensionContext;
+		status: string;
+		result: string;
+		childSessionFile: string;
+		exitCode: number | null | undefined;
+	};
+	const pendingResults: PendingResult[] = [];
+	let resultTurnInFlight = false;
 	let shuttingDown = false;
 
-	function enqueueResult(
-		ctx: ExtensionCommandContext,
-		{
-			status,
-			result,
-			childSessionFile,
-			exitCode,
-		}: {
-			status: string;
-			result: string;
-			childSessionFile: string;
-			exitCode: number | null | undefined;
-		},
-	): void {
-		resultDeliveryQueue = resultDeliveryQueue
-			.then(async () => {
-				if (shuttingDown) return;
-				await ctx.waitForIdle();
-				if (shuttingDown) return;
-
-				pi.sendMessage(
-					{
-						customType: "subtask",
-						content: `${copy.resultHeader(status)}\n\n${result}\n\n${copy.childSession(childSessionFile)}`,
-						display: true,
-						details: { childSessionFile, exitCode },
+	function flushResultQueue(): void {
+		if (shuttingDown || resultTurnInFlight || pendingResults.length === 0) return;
+		const next = pendingResults[0];
+		if (!next.ctx.isIdle()) return;
+		pendingResults.shift();
+		resultTurnInFlight = true;
+		try {
+			pi.sendMessage(
+				{
+					customType: "subtask",
+					content:
+						copy.resultHeader(next.status) +
+						"\n\n" +
+						next.result +
+						"\n\n" +
+						copy.childSession(next.childSessionFile),
+					display: true,
+					details: {
+						childSessionFile: next.childSessionFile,
+						exitCode: next.exitCode,
 					},
-					{ deliverAs: "followUp", triggerTurn: true },
-				);
+				},
+				{ deliverAs: "followUp", triggerTurn: true },
+			);
+		} catch (error) {
+			resultTurnInFlight = false;
+			notify(
+				next.ctx,
+				copy.resultInsertFailed(error instanceof Error ? error.message : String(error)),
+				"error",
+			);
+			flushResultQueue();
+		}
+	}
 
-				// Wait for this turn before delivering next result. This prevents concurrent
-				// sendMessage() calls from racing when several children finish together.
-				await ctx.waitForIdle();
-			})
-			.catch((error) => {
-				if (!shuttingDown) {
-					notify(
-						ctx,
-						copy.resultInsertFailed(error instanceof Error ? error.message : String(error)),
-						"error",
-					);
-				}
-			});
+	function enqueueResult(
+		ctx: ExtensionContext,
+		result: Omit<PendingResult, "ctx">,
+	): void {
+		pendingResults.push({ ctx, ...result });
+		flushResultQueue();
 	}
 
 	function updateStatus(ctx: ExtensionContext): void {
@@ -262,12 +268,201 @@ export default function subtaskExtension(pi: ExtensionAPI): void {
 		);
 	}
 
+	pi.on("agent_settled", () => {
+		resultTurnInFlight = false;
+		flushResultQueue();
+	});
+
 	pi.on("session_shutdown", (_event, ctx) => {
 		shuttingDown = true;
 		for (const child of children) child.kill("SIGTERM");
 		children.clear();
 		tasks.clear();
+		pendingResults.length = 0;
+		resultTurnInFlight = false;
 		updateStatus(ctx);
+	});
+
+	function lastUserLeafId(ctx: ExtensionContext): string | undefined {
+		const branch = ctx.sessionManager.getBranch() as Array<{
+			id?: string;
+			type?: string;
+			message?: { role?: string };
+		}>;
+		return [...branch]
+			.reverse()
+			.find(
+				(entry: { id?: string; type?: string; message?: { role?: string } }) =>
+					entry.type === "message" && entry.message?.role === "user",
+			)
+			?.id;
+	}
+
+	async function startSubtask(
+		prompt: string,
+		ctx: ExtensionContext,
+		forkLeafId?: string,
+	): Promise<{ id: string; childSessionFile: string }> {
+		const parentSessionFile = ctx.sessionManager.getSessionFile();
+		const leafId = forkLeafId ?? ctx.sessionManager.getLeafId();
+		if (!parentSessionFile || !leafId) throw new Error(copy.sessionNotPersisted);
+
+		let childSessionFile: string | undefined;
+		try {
+			const forkManager = SessionManager.open(parentSessionFile);
+			childSessionFile = forkManager.createBranchedSession(leafId);
+		} catch (error) {
+			throw new Error(copy.forkFailed(error instanceof Error ? error.message : String(error)));
+		}
+		if (!childSessionFile) throw new Error(copy.forkUnavailable);
+
+		const childArgs = [
+			"--no-extensions",
+			"--mode",
+			"json",
+			"-p",
+			"--session",
+			childSessionFile,
+		];
+		if (ctx.model) childArgs.push("--model", ctx.model.provider + "/" + ctx.model.id);
+		const activeTools = pi.getActiveTools().filter((name) => name !== "subtask");
+		if (activeTools.length > 0) childArgs.push("--tools", activeTools.join(","));
+		childArgs.push(
+			"--thinking",
+			pi.getThinkingLevel(),
+			"--append-system-prompt",
+			copy.childSystemPrompt,
+			prompt,
+		);
+
+		const invocation = getPiInvocation(childArgs);
+		let child: ChildProcess;
+		try {
+			child = spawn(invocation.command, invocation.args, {
+				cwd: ctx.cwd,
+				env: {
+					...process.env,
+					PI_SUBTASK_CHILD: "1",
+					PI_SUBTASK_LOCALE: locale,
+				},
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		} catch (error) {
+			throw new Error(copy.childStartFailed(error instanceof Error ? error.message : String(error)));
+		}
+
+		children.add(child);
+		const childId =
+			path.basename(childSessionFile, ".jsonl").split("_").pop() ?? "unknown";
+		tasks.set(child, { id: childId, prompt });
+		updateStatus(ctx);
+		notify(ctx, copy.childStarted(path.basename(childSessionFile)));
+
+		const state = { output: "", error: "" };
+		let stdoutBuffer = "";
+		let stderr = "";
+		let completionSent = false;
+		const finish = (
+			exitCode: number | null | undefined,
+			forcedStatus?: string,
+		) => {
+			if (completionSent || shuttingDown) return;
+			completionSent = true;
+			children.delete(child);
+			tasks.delete(child);
+			updateStatus(ctx);
+
+			const result = state.output || state.error || stderr.trim() || copy.noText;
+			const status =
+				forcedStatus ??
+				(exitCode === 0 ? copy.completed : copy.failed(String(exitCode ?? "unknown")));
+			enqueueResult(ctx, { status, result, childSessionFile, exitCode });
+		};
+		const handleLine = (line: string) => {
+			parseLine(line, state);
+		};
+		child.stdout?.on("data", (data: Buffer | string) => {
+			stdoutBuffer += data.toString();
+			const lines = stdoutBuffer.split("\n");
+			stdoutBuffer = lines.pop() ?? "";
+			for (const line of lines) handleLine(line);
+		});
+		child.stderr?.on("data", (data: Buffer | string) => {
+			stderr = (stderr + data.toString()).slice(-4000);
+		});
+		child.on("error", (error) => {
+			state.error = error.message;
+		});
+		child.on("close", (exitCode) => {
+			if (shuttingDown || completionSent) return;
+			if (stdoutBuffer) handleLine(stdoutBuffer);
+			finish(exitCode);
+		});
+
+		return { id: childId, childSessionFile };
+	}
+
+	pi.registerTool({
+		name: "subtask",
+		label: "Parallel subtask",
+		description:
+			"Start one or more lightweight non-blocking child Pi sessions for bounded independent work. The parent stays responsive and completed results return as follow-up turns.",
+		promptSnippet:
+			"Delegate bounded independent work to lightweight non-blocking child Pi sessions",
+		promptGuidelines: [
+			"Use subtask when work is meaningfully independent, benefits from isolation or parallel execution, and the parent can continue without waiting. Do not invent specialist personas or workflow stages; pass the concrete task directly. Keep trivial work in the parent.",
+		],
+		parameters: Type.Object(
+			{
+				task: Type.Optional(
+					Type.String({
+						minLength: 1,
+						description: "One concrete child task.",
+					}),
+				),
+				tasks: Type.Optional(
+					Type.Array(Type.String({ minLength: 1 }), {
+						minItems: 1,
+						maxItems: 8,
+						description:
+							"Independent child tasks to start in parallel from the same parent context.",
+					}),
+				),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			signal?.throwIfAborted();
+			const prompts = [
+				...(params.task?.trim() ? [params.task.trim()] : []),
+				...(params.tasks ?? []).map((task) => task.trim()).filter(Boolean),
+			];
+			if (prompts.length === 0) throw new Error("Provide task or tasks.");
+			if (prompts.length > 8) throw new Error("At most 8 subtasks can be launched at once.");
+
+			const forkLeafId = lastUserLeafId(ctx) ?? ctx.sessionManager.getLeafId();
+			if (!forkLeafId) throw new Error(copy.sessionNotPersisted);
+			const started: Array<{ id: string; childSessionFile: string }> = [];
+			for (const prompt of prompts) {
+				signal?.throwIfAborted();
+				started.push(await startSubtask(prompt, ctx, forkLeafId));
+			}
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							"Started " +
+							started.length +
+							" non-blocking subtask(s): " +
+							started.map((item) => item.id).join(", ") +
+							". Results will return as follow-up turns.",
+					},
+				],
+				details: { started },
+			};
+		},
 	});
 
 	pi.registerCommand("subtask", {
@@ -276,141 +471,16 @@ export default function subtaskExtension(pi: ExtensionAPI): void {
 			const prompt = args.trim();
 			if (!prompt) {
 				updateStatus(ctx);
-				notify(
-					ctx,
-					tasks.size > 0 ? copy.running(tasks.size) : copy.noRunning,
-				);
+				notify(ctx, tasks.size > 0 ? copy.running(tasks.size) : copy.noRunning);
 				return;
 			}
 
-			// Make the fork point deterministic when the user submits this while Pi is busy.
 			await ctx.waitForIdle();
-
-			const parentSessionFile = ctx.sessionManager.getSessionFile();
-			const leafId = ctx.sessionManager.getLeafId();
-			if (!parentSessionFile || !leafId) {
-				notify(
-					ctx,
-					copy.sessionNotPersisted,
-					"error",
-				);
-				return;
-			}
-
-			let childSessionFile: string | undefined;
 			try {
-				// createBranchedSession mutates its SessionManager, so open a separate manager.
-				const forkManager = SessionManager.open(parentSessionFile);
-				childSessionFile = forkManager.createBranchedSession(leafId);
+				await startSubtask(prompt, ctx);
 			} catch (error) {
-				notify(
-					ctx,
-					copy.forkFailed(error instanceof Error ? error.message : String(error)),
-					"error",
-				);
-				return;
+				notify(ctx, error instanceof Error ? error.message : String(error), "error");
 			}
-
-			if (!childSessionFile) {
-				notify(ctx, copy.forkUnavailable, "error");
-				return;
-			}
-
-			const childArgs = [
-				"--no-extensions",
-				"--mode",
-				"json",
-				"-p",
-				"--session",
-				childSessionFile,
-			];
-			if (ctx.model)
-				childArgs.push("--model", `${ctx.model.provider}/${ctx.model.id}`);
-			const activeTools = pi.getActiveTools();
-			if (activeTools.length > 0)
-				childArgs.push("--tools", activeTools.join(","));
-			childArgs.push(
-				"--thinking",
-				pi.getThinkingLevel(),
-				"--append-system-prompt",
-				copy.childSystemPrompt,
-				prompt,
-			);
-
-			const invocation = getPiInvocation(childArgs);
-			let child: ChildProcess;
-			try {
-				child = spawn(invocation.command, invocation.args, {
-					cwd: ctx.cwd,
-					env: {
-						...process.env,
-						PI_SUBTASK_CHILD: "1",
-						PI_SUBTASK_LOCALE: locale,
-					},
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-			} catch (error) {
-				notify(
-					ctx,
-					copy.childStartFailed(error instanceof Error ? error.message : String(error)),
-					"error",
-				);
-				return;
-			}
-
-			children.add(child);
-			const childId =
-				path.basename(childSessionFile, ".jsonl").split("_").pop() ?? "unknown";
-			tasks.set(child, { id: childId, prompt });
-			updateStatus(ctx);
-			notify(ctx, copy.childStarted(path.basename(childSessionFile)));
-
-			const state = { output: "", error: "" };
-			let stdoutBuffer = "";
-			let stderr = "";
-			let completionSent = false;
-			const finish = (
-				exitCode: number | null | undefined,
-				forcedStatus?: string,
-			) => {
-				if (completionSent || shuttingDown) return;
-				completionSent = true;
-				children.delete(child);
-				tasks.delete(child);
-				updateStatus(ctx);
-
-				const result =
-					state.output ||
-					state.error ||
-					stderr.trim() ||
-					copy.noText;
-				const status =
-					forcedStatus ??
-					(exitCode === 0
-						? copy.completed
-						: copy.failed(String(exitCode ?? "unknown")));
-				enqueueResult(ctx, { status, result, childSessionFile, exitCode });
-			};
-			const handleLine = (line: string) => {
-				parseLine(line, state);
-			};
-			child.stdout?.on("data", (data: Buffer | string) => {
-				stdoutBuffer += data.toString();
-				const lines = stdoutBuffer.split("\n");
-				stdoutBuffer = lines.pop() ?? "";
-				for (const line of lines) handleLine(line);
-			});
-			child.stderr?.on("data", (data: Buffer | string) => {
-				stderr = `${stderr}${data.toString()}`.slice(-4000);
-			});
-			child.on("error", (error) => {
-				state.error = error.message;
-			});
-			child.on("close", (exitCode) => {
-				if (shuttingDown || completionSent) return;
-				if (stdoutBuffer) handleLine(stdoutBuffer);
-				finish(exitCode);
-			});
 		},
 	});
 }
