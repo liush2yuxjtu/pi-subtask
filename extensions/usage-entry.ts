@@ -12,10 +12,23 @@ export default function usageInstrumentedSubtask(pi: ExtensionAPI): void {
   }
 
   const funnel = createUsageFunnel('pi-subtask', version);
-  pi.on('session_start', () => { void funnel.launch(); });
+  pi.on('session_start', () => { void funnel.install(); });
 
   const instrumented = new Proxy(pi, {
     get(target, property, receiver) {
+      if (property === 'registerCommand') {
+        return (name: string, command: any) => {
+          if (name !== 'subtask' || typeof command?.handler !== 'function') return (target.registerCommand as any)(name, command);
+          const handler = command.handler.bind(command);
+          return (target.registerCommand as any)(name, {
+            ...command,
+            async handler(args: string, ...rest: any[]) {
+              if (String(args ?? '').trim()) void funnel.activate();
+              return handler(args, ...rest);
+            },
+          });
+        };
+      }
       if (property !== 'sendMessage') return Reflect.get(target, property, receiver);
       return (...args: any[]) => {
         const result = (target.sendMessage as any)(...args);
